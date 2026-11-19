@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fine-map Quest</title>
+<meta name="description" content="A pixel-art game about fine-mapping: find the causal variants hiding in the LD.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="sky" aria-hidden="true"><div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div></div>
+
+<main>
+  <!-- Title -->
+  <section id="title" class="screen">
+    <h1 class="logo"><span>FINE-MAP</span><span>QUEST</span></h1>
+    <p class="tagline">Find the causal variants hiding in the LD!</p>
+    <div class="hero">
+      <canvas class="sprite" id="hero-snip" width="16" height="14" aria-label="Snip, the game's mascot"></canvas>
+      <div class="bubble">Hi, I'm Snip! Each world hides a few causal variants. Their neighbours light up too, because of LD. Can you tell which ones really matter?</div>
+    </div>
+
+    <div class="panel options">
+      <h2>OPTIONS</h2>
+      <div class="opt-grid">
+        <div class="opt">
+          <span class="opt-label">DIFFICULTY</span>
+          <div class="levels" id="levels" role="radiogroup" aria-label="Difficulty"></div>
+          <p class="opt-help">Sets the GWAS sample size N. LD is estimated from the same samples, so a smaller N means fainter peaks and noisier LD.</p>
+        </div>
+        <div class="opt">
+          <label for="s-variants" class="opt-label">VARIANTS <output id="o-variants"></output></label>
+          <input id="s-variants" type="range" min="10" max="80" step="1" value="30">
+        </div>
+        <div class="opt">
+          <label for="s-kmin" class="opt-label">FEWEST CAUSAL <output id="o-kmin"></output></label>
+          <input id="s-kmin" type="range" min="1" max="6" step="1" value="1">
+        </div>
+        <div class="opt">
+          <label for="s-kmax" class="opt-label">MOST CAUSAL <output id="o-kmax"></output></label>
+          <input id="s-kmax" type="range" min="1" max="6" step="1" value="3">
+        </div>
+        <div class="opt">
+          <label for="s-ld" class="opt-label">LD STRENGTH <output id="o-ld"></output></label>
+          <input id="s-ld" type="range" min="0" max="1" step="0.05" value="0.7">
+        </div>
+        <div class="opt">
+          <label for="s-rounds" class="opt-label">WORLDS <output id="o-rounds"></output></label>
+          <input id="s-rounds" type="range" min="1" max="10" step="1" value="5">
+        </div>
+      </div>
+      <div class="start-row">
+        <button id="start" class="btn btn-gold big-btn">PRESS START</button>
+        <span class="hi" id="hi-score"></span>
+      </div>
+      <p class="code" id="seed-note"></p>
+    </div>
+
+    <details class="panel how">
+      <summary>HOW IT WORKS</summary>
+      <ul>
+        <li><b>The region.</b> Each world is a stretch of genome with a few dozen variants. Nearby variants are inherited together (linkage disequilibrium, LD), so they're correlated: strongly when close, weakly when far apart, with patches where recombination broke things up. Variants are built from overlapping haplotype segments plus a chain along the region, so the LD decays with distance and is patchy, like real data.</li>
+        <li><b>The phenotype.</b> A few variants are causal, each explaining 1–4% of the phenotype's variance, with random signs. The rest do nothing.</li>
+        <li><b>What you see.</b> The GWAS: −log<sub>10</sub> p from testing each variant on its own. And the LD (r²) between variants, estimated from the same N samples, so it carries sampling noise of about 1/√N.</li>
+        <li><b>Your rival.</b> STEP-BOT runs a stepwise conditional analysis: take the strongest variant, refit conditioning on it, and repeat while the best remaining one passes p &lt; 0.05 / variants.</li>
+        <li><b>Scoring.</b> Each world is worth 100 coins: twice the number you got right, divided by your picks plus the true causal variants (the F1 score). A wrong pick and a missed causal variant cost the same.</li>
+        <li><b>Class mode.</b> The settings and a game code go in the link, so everyone who opens it plays the same worlds.</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- Game -->
+  <section id="game" class="screen hidden">
+    <div class="hud panel">
+      <div class="hud-item"><span class="hud-k">WORLD</span><span class="hud-v" id="hud-world">1-1</span></div>
+      <div class="hud-item"><span class="hud-k"><canvas class="coin" width="8" height="8"></canvas> COINS</span><span class="hud-v" id="hud-coins">0000</span></div>
+      <div class="hud-item"><span class="hud-k">STEP-BOT</span><span class="hud-v" id="hud-bot">0000</span></div>
+      <div class="hud-item"><span class="hud-k">LEVEL</span><span class="hud-v" id="hud-level">MEDIUM</span></div>
+      <button class="btn btn-small" id="mute" aria-pressed="false" title="Sound on or off">SOUND ON</button>
+    </div>
+
+    <div class="speaker">
+      <canvas class="sprite small" id="game-snip" width="16" height="14" aria-hidden="true"></canvas>
+      <div class="bubble" id="say"></div>
+    </div>
+
+    <div class="charts">
+      <div class="panel screen-panel">
+        <p class="chart-title">GWAS <span>−log<sub>10</sub> p for each variant on its own</span></p>
+        <svg id="scatter" viewBox="0 0 640 380" role="img" aria-label="Association plot"></svg>
+        <div class="legend" id="scatter-legend"></div>
+      </div>
+      <div class="panel screen-panel">
+        <p class="chart-title">LD <span>r² between variants</span></p>
+        <canvas id="heat" aria-label="LD matrix"></canvas>
+        <div class="colorbar"><span>0</span><span class="bar" id="colorbar"></span><span>1</span></div>
+        <p class="ld-note" id="ld-note"></p>
+        <label class="toggle hidden" id="true-ld-wrap"><input type="checkbox" id="true-ld"> SHOW TRUE LD</label>
+      </div>
+    </div>
+
+    <div class="blocks" id="chips" aria-label="Variants: toggle your picks"></div>
+
+    <div class="actions" id="actions">
+      <button id="submit" class="btn btn-gold">LOCK IN!</button>
+      <button id="clear" class="btn">CLEAR</button>
+    </div>
+
+    <div class="panel result hidden" id="reveal">
+      <p class="banner" id="banner"></p>
+      <div class="versus">
+        <div><canvas class="sprite small" id="res-snip" width="16" height="14" aria-hidden="true"></canvas><span class="vs-name">YOU</span><span class="vs-score" id="vs-you"></span></div>
+        <div class="vs">VS</div>
+        <div><canvas class="sprite small" id="res-bot" width="12" height="12" aria-hidden="true"></canvas><span class="vs-name">STEP-BOT</span><span class="vs-score" id="vs-bot"></span></div>
+      </div>
+      <p id="reveal-truth"></p>
+      <p id="reveal-step"></p>
+      <button id="next" class="btn btn-gold">NEXT WORLD ▶</button>
+    </div>
+  </section>
+
+  <!-- End -->
+  <section id="results" class="screen hidden">
+    <h1 class="logo small-logo"><span id="end-head">COURSE CLEAR!</span></h1>
+    <div class="panel final">
+      <div class="final-row">
+        <canvas class="sprite" id="end-snip" width="16" height="14" aria-hidden="true"></canvas>
+        <div>
+          <p class="final-score"><canvas class="coin big" width="8" height="8"></canvas> <span id="final-score"></span></p>
+          <p class="rank" id="final-title"></p>
+          <p id="final-compare"></p>
+          <p class="hi" id="final-hi"></p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>WORLD</th><th>CAUSAL</th><th>YOUR PICKS</th><th class="num">YOU</th><th>STEP-BOT</th><th class="num">BOT</th></tr></thead>
+          <tbody id="results-body"></tbody>
+          <tfoot><tr><td colspan="3">TOTAL</td><td class="num" id="tot-you"></td><td></td><td class="num" id="tot-step"></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="end-actions">
+        <button id="again" class="btn btn-gold">PLAY AGAIN</button>
+        <button id="change" class="btn">OPTIONS</button>
+        <button id="share" class="btn">COPY LINK</button>
+      </div>
+    </div>
+    <details class="panel how" open>
+      <summary>WHY IS THIS HARD?</summary>
+      <ul>
+        <li>A variant in strong LD with a causal one carries almost the same signal, so the tallest peak is often a bystander.</li>
+        <li>Two causal variants in LD can add up and make a bystander between them look strongest, or cancel out when their effects have opposite signs.</li>
+        <li>LD estimated from a few hundred samples is noisy: variants can look linked, or unlinked, by chance.</li>
+        <li>Conditioning on one causal variant makes its neighbours' signals vanish. Conditional analysis and fine-mapping methods (SuSiE, FINEMAP) build on that, but none of them can separate variants in near-perfect LD. That needs more samples, other populations, or functional data.</li>
+      </ul>
+    </details>
+  </section>
+
+  <footer>Made by <a href="https://chrisbcole.me">Chris Cole</a> for teaching statistical genetics. Everything runs in your browser.</footer>
+</main>
+<div class="ground" aria-hidden="true"></div>
+<div id="tip" class="hidden"></div>
+
+<script src="engine.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
