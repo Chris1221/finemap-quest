@@ -153,6 +153,7 @@ showHigh();
 // ── Game state ───────────────────────────────────────────────────────────────
 const game = { cfg: null, story: false, seed: 0, rand: null, index: 0, history: [], cur: null, picks: new Set(), revealed: false, hover: null, heatHover: null, hints: false };
 const HINT_COST = 0.2; // share of a world's coins that turning on hints costs
+const TOUCH = matchMedia("(hover: none)").matches; // phones and tablets: no hover, so taps show LD
 const pad = (v) => String(v).padStart(4, "0");
 const nameOf = (j) => (game.cur?.rsids?.[j] ? `v${j + 1} (${game.cur.rsids[j]})` : `v${j + 1}`);
 const names = (ids, rsids) => ids.map((j) => (rsids?.[j] ? `v${j + 1} (${rsids[j]})` : `v${j + 1}`)).join(", ");
@@ -192,7 +193,7 @@ function newRound() {
   snip($("#game-snip"), "normal");
   const k = game.cfg.kmin === game.cfg.kmax ? `${game.cfg.kmin}` : `${game.cfg.kmin} to ${game.cfg.kmax}`;
   if (spec) say(`${spec.gene} · ${spec.trait}. ${spec.intro} Plant a flag on each causal variant.`);
-  else say(`World 1-${game.index + 1}! There ${k === "1" ? "is 1 causal variant" : `are ${k} causal variants`} hiding here. Plant a flag on each one: click a peak, or a block below. Hover to see LD.`);
+  else say(`World 1-${game.index + 1}! There ${k === "1" ? "is 1 causal variant" : `are ${k} causal variants`} hiding here. Plant a flag on each one: ${TOUCH ? "tap a point, or a block below" : "click a peak, or a block below. Hover to see LD"}.`);
   buildBlocks();
   render();
 }
@@ -284,7 +285,8 @@ function showResults() {
 // ── Drawing ──────────────────────────────────────────────────────────────────
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const SVG = "http://www.w3.org/2000/svg";
-const W = 640, M = { l: 52, r: 16, t: 34, b: 50 };
+let W = 640;
+const M = { l: 52, r: 16, t: 34, b: 50 };
 let H = 380;
 
 function el(tag, attrs, parent) {
@@ -326,13 +328,45 @@ function render() {
 
 function drawScatter() {
   const svg = $("#scatter"), cur = game.cur, m = cur.m, LD = shownLD();
+  // Phones get a narrower drawing, so labels and points stay big enough to read and tap
+  W = svg.clientWidth && svg.clientWidth < 520 ? 400 : 640;
   H = game.hints ? 414 : 380; M.b = game.hints ? 84 : 50;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.replaceChildren();
+  // Everything is drawn into a group that's rebuilt; clicks and hovers go to a fixed overlay on top of it,
+  // so redrawing (to show LD on hover) never removes the element under a finger or cursor mid-tap
+  let plot = svg.querySelector("g.plot");
+  if (!plot) {
+    plot = el("g", { class: "plot" }, svg);
+    const overlay = el("rect", { class: "overlay", x: 0, y: 0, width: W, height: H, fill: "transparent" }, svg);
+    overlay.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse") return;
+      const j = nearestPoint(e);
+      if (j !== game.hover) { game.hover = j; drawScatter(); drawHeat(); updateLegend(); }
+      if (j === null) hideTip(); else tipFor(j, e);
+      overlay.style.cursor = j !== null && !game.revealed ? "pointer" : "default";
+    });
+    overlay.addEventListener("pointerleave", (e) => {
+      if (e.pointerType !== "mouse") return;
+      game.hover = null; hideTip(); drawScatter(); drawHeat(); updateLegend();
+    });
+    overlay.addEventListener("click", (e) => {
+      const j = nearestPoint(e);
+      if (j === null) return;
+      // On touch there's no hover, so a tap also lights up that variant's LD
+      if (e.pointerType !== "mouse") { game.hover = j; drawHeat(); updateLegend(); }
+      togglePick(j);
+    });
+  }
+  svg.querySelector("rect.overlay").setAttribute("height", H);
+  svg.querySelector("rect.overlay").setAttribute("width", W);
+  plot.replaceChildren();
+  {
+    const svg = plot;
   const ymaxRaw = Math.max(6, ...cur.nlp) * 1.12;
   const ystep = niceStep(ymaxRaw, 5), ymax = Math.ceil(ymaxRaw / ystep) * ystep;
   const x = (j) => M.l + ((j + 0.5) / m) * (W - M.l - M.r);
   const y = (v) => H - M.b - (v / ymax) * (H - M.t - M.b);
+  scatterGeom = { x, y, hitR: Math.max(14, Math.min(28, (W - M.l - M.r) / m)) };
 
   for (let v = 0; v <= ymax + 1e-9; v += ystep) {
     if (v > 0) el("line", { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v), stroke: css("--screen-grid"), "stroke-width": 2, "stroke-dasharray": "4 6" }, svg);
@@ -357,7 +391,6 @@ function drawScatter() {
 
   const lead = game.hover ?? game.heatHover;
   const bins = ["--ld0", "--ld1", "--ld2", "--ld3", "--ld4"].map(css);
-  const hitR = Math.max(8, Math.min(16, (W - M.l - M.r) / m / 2));
   const order = Array.from({ length: m }, (_, j) => j);
   if (lead !== null) order.sort((a, b) => LD[lead * m + a] ** 2 - LD[lead * m + b] ** 2);
 
@@ -371,12 +404,23 @@ function drawScatter() {
       el("rect", { x: cx - 5, y: cy - 5, width: 10, height: 10, fill, stroke: css("--screen"), "stroke-width": 2 }, g);
     }
     markPoint(g, j, cx, cy);
-    const hit = el("circle", { cx, cy, r: hitR, fill: "transparent", style: game.revealed ? "" : "cursor:pointer" }, g);
-    hit.addEventListener("mouseenter", (e) => { game.hover = j; drawScatter(); drawHeat(); updateLegend(); tipFor(j, e); });
-    hit.addEventListener("mousemove", (e) => tipFor(j, e));
-    hit.addEventListener("mouseleave", () => { game.hover = null; hideTip(); drawScatter(); drawHeat(); updateLegend(); });
-    hit.addEventListener("click", () => togglePick(j));
   }
+  }
+}
+
+// The variant nearest a pointer event, within reach of its point (in the plot's own units), or null
+let scatterGeom = null;
+function nearestPoint(e) {
+  const svg = $("#scatter"), ctm = svg.getScreenCTM();
+  if (!ctm || !scatterGeom || !game.cur) return null;
+  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+  const { x, y, hitR } = scatterGeom;
+  let best = null, bestD = Infinity;
+  game.cur.nlp.forEach((v, j) => {
+    const d = Math.hypot(p.x - x(j), (p.y - y(v)) * 0.6); // forgiving vertically
+    if (d < bestD) { bestD = d; best = j; }
+  });
+  return bestD <= hitR ? best : null;
 }
 
 function markPoint(g, j, cx, cy) {
@@ -419,7 +463,7 @@ function updateLegend() {
       `<span><span class="sw" style="background:var(--bad)"></span>NOPE: a bystander you flagged</span>`,
       `<span><span class="sw" style="background:var(--bot)"></span>STEP-BOT's picks</span>`);
   } else {
-    parts.push(`<span><span class="sw" style="background:var(--flag)"></span>your flags</span>`, `<span>Hover over a variant to light up its LD.</span>`);
+    parts.push(`<span><span class="sw" style="background:var(--flag)"></span>your flags</span>`, `<span>${TOUCH ? "Tapping a variant also lights up its LD." : "Hover over a variant to light up its LD."}</span>`);
   }
   if (game.hints) parts.push(`<span>Annotations:</span>` + Object.entries(ANNOT).map(([k, a]) =>
     `<span><span class="sw" style="background:${a.color}"></span>${k} = ${a.name}</span>`).join(""));
@@ -540,7 +584,7 @@ $("#share").addEventListener("click", async () => {
   catch { prompt("Copy this link:", url); }
   setTimeout(() => ($("#share").textContent = "COPY LINK"), 2000);
 });
-addEventListener("resize", () => { if (game.cur && !$("#game").classList.contains("hidden")) drawHeat(); });
+addEventListener("resize", () => { if (game.cur && !$("#game").classList.contains("hidden")) { drawScatter(); drawHeat(); } });
 document.fonts?.ready.then(() => { if (game.cur) render(); });
 
 if (storyFromUrl && seed !== null) $("#seed-note").textContent = `Story mode, game code ${seed}: press STORY MODE to play the same worlds.`;

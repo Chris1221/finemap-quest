@@ -265,3 +265,5 @@ svg .badge { font-family: "Press Start 2P", monospace; font-size: 8px; fill: #1d
 .story-head { font-family: "Press Start 2P", monospace; font-size: 11px; color: var(--gold); margin: 0 0 8px !important; }
 .story-note { color: var(--screen-ink-2); font-size: 18px; }
 .result .story-box p { margin: 6px 0; max-width: none; }
+/* Taps act at once: no double-tap zoom delay on the plot, the matrix or buttons */
+#scatter, #heat, .btn, .block { touch-action: manipulation; }
