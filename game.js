@@ -132,9 +132,11 @@ if (params.has("n")) { const i = LEVELS.findIndex((l) => l.n === +params.get("n"
 let seed = params.has("seed") ? parseInt(params.get("seed"), 10) >>> 0 : null;
 if (seed !== null) $("#seed-note").textContent = `Game code ${seed}: everyone with this link plays the same worlds.`;
 buildLevels(); showSettings();
+const storyFromUrl = params.get("story") === "1";
 
 function gameUrl(cfg, s) {
-  const q = new URLSearchParams({ v: cfg.variants, kmin: cfg.kmin, kmax: cfg.kmax, ld: cfg.ld, n: cfg.samples, rounds: cfg.rounds, seed: s });
+  const q = game.story ? new URLSearchParams({ story: 1, seed: s })
+    : new URLSearchParams({ v: cfg.variants, kmin: cfg.kmin, kmax: cfg.kmax, ld: cfg.ld, n: cfg.samples, rounds: cfg.rounds, seed: s });
   return `${location.origin}${location.pathname}?${q}`;
 }
 
@@ -149,15 +151,18 @@ function showHigh() {
 showHigh();
 
 // ── Game state ───────────────────────────────────────────────────────────────
-const game = { cfg: null, seed: 0, rand: null, index: 0, history: [], cur: null, picks: new Set(), revealed: false, hover: null, heatHover: null };
+const game = { cfg: null, story: false, seed: 0, rand: null, index: 0, history: [], cur: null, picks: new Set(), revealed: false, hover: null, heatHover: null, hints: false };
+const HINT_COST = 0.2; // share of a world's coins that turning on hints costs
 const pad = (v) => String(v).padStart(4, "0");
-const names = (ids) => ids.map((j) => `v${j + 1}`).join(", ");
+const nameOf = (j) => (game.cur?.rsids?.[j] ? `v${j + 1} (${game.cur.rsids[j]})` : `v${j + 1}`);
+const names = (ids, rsids) => ids.map((j) => (rsids?.[j] ? `v${j + 1} (${rsids[j]})` : `v${j + 1}`)).join(", ");
 const total = (key) => game.history.reduce((a, r) => a + r[key], 0);
 
 function show(id) { ["#title", "#game", "#results"].forEach((s) => $(s).classList.toggle("hidden", s !== id)); scrollTo(0, 0); }
 
-function startGame() {
-  game.cfg = readSettings();
+function startGame(story = false) {
+  game.story = story === true;
+  game.cfg = game.story ? { rounds: STORIES.length, level: "STORY" } : readSettings();
   game.seed = seed ?? Math.floor(Math.random() * 1e9);
   seed = null; // "Play again" makes a new game unless a link fixed the code
   game.rand = mulberry32(game.seed);
@@ -169,18 +174,25 @@ function startGame() {
 }
 
 function newRound() {
-  game.cur = simulate(game.cfg, game.rand);
+  const spec = game.story ? STORIES[game.index] : null;
+  if (spec) game.cur = storyWorld(spec, game.rand);
+  else { game.cur = simulate(game.cfg, game.rand); annotate(game.cur, game.rand); }
+  game.spec = spec;
   game.picks = new Set(); game.revealed = false; game.hover = null; game.heatHover = null;
   $("#reveal").classList.add("hidden");
   $("#actions").classList.remove("hidden");
   $("#true-ld").checked = false; $("#true-ld-wrap").classList.add("hidden");
+  $("#hint-btn").disabled = false;
   $("#hud-world").textContent = `1-${game.index + 1}`;
   $("#hud-coins").textContent = pad(total("score"));
   $("#hud-bot").textContent = pad(total("stepScore"));
-  $("#hud-level").textContent = game.cfg.level;
+  $("#hud-level").textContent = spec ? spec.gene : game.cfg.level;
+  $("#hud-level-k").textContent = spec ? "LOCUS" : "LEVEL";
+  $("#reveal-story").classList.add("hidden");
   snip($("#game-snip"), "normal");
   const k = game.cfg.kmin === game.cfg.kmax ? `${game.cfg.kmin}` : `${game.cfg.kmin} to ${game.cfg.kmax}`;
-  say(`World 1-${game.index + 1}! There ${k === "1" ? "is 1 causal variant" : `are ${k} causal variants`} hiding here. Plant a flag on each one: click a peak, or a block below. Hover to see LD.`);
+  if (spec) say(`${spec.gene} · ${spec.trait}. ${spec.intro} Plant a flag on each causal variant.`);
+  else say(`World 1-${game.index + 1}! There ${k === "1" ? "is 1 causal variant" : `are ${k} causal variants`} hiding here. Plant a flag on each one: click a peak, or a block below. Hover to see LD.`);
   buildBlocks();
   render();
 }
@@ -195,8 +207,9 @@ function togglePick(j) {
 
 function submit() {
   const picks = [...game.picks].sort((a, b) => a - b), cur = game.cur;
-  const score = f1(picks, cur.causal), stepScore = f1(cur.stepwise, cur.causal);
-  game.history.push({ causal: cur.causal, picks, score, stepwise: cur.stepwise, stepScore });
+  const raw = f1(picks, cur.causal), hinted = game.hints;
+  const score = hinted ? Math.round(raw * (1 - HINT_COST)) : raw, stepScore = f1(cur.stepwise, cur.causal);
+  game.history.push({ causal: cur.causal, rsids: cur.rsids, gene: game.spec?.gene, picks, score, hinted, stepwise: cur.stepwise, stepScore });
   game.revealed = true;
   sfx.lock();
 
@@ -211,16 +224,22 @@ function submit() {
     if (score >= 67) sfx.great(); else if (score >= 40) sfx.meh(); else sfx.bad();
   });
   $("#reveal-truth").textContent =
-    `${cur.causal.length === 1 ? "The causal variant was" : `The ${cur.causal.length} causal variants were`} ${names(cur.causal)}. ` +
-    `You found ${found} of ${cur.causal.length}` + (wrong ? `, and ${wrong} of your flags ${wrong === 1 ? "was on a bystander" : "were on bystanders"}.` : ".");
+    `${cur.causal.length === 1 ? "The causal variant was" : `The ${cur.causal.length} causal variants were`} ${names(cur.causal, cur.rsids)}. ` +
+    `You found ${found} of ${cur.causal.length}` + (wrong ? `, and ${wrong} of your flags ${wrong === 1 ? "was on a bystander" : "were on bystanders"}.` : ".") +
+    (hinted ? ` Hints cost you ${raw - score} coins.` : "");
+  if (game.spec) {
+    $("#story-text").textContent = game.spec.story;
+    $("#reveal-story").classList.remove("hidden");
+  }
   $("#reveal-step").textContent = cur.stepwise.length
     ? `STEP-BOT picked ${names(cur.stepwise)} for ${stepScore} coins.`
     : `STEP-BOT found nothing significant: 0 coins.`;
   say(score > stepScore ? "You beat STEP-BOT this world!" : score === stepScore ? "A tie with STEP-BOT!" : "STEP-BOT wins this one. Conditioning helps!");
-  $("#next").textContent = game.index + 1 < game.cfg.rounds ? "NEXT WORLD ▶" : "FINISH ▶";
+  $("#next").textContent = game.index + 1 < game.cfg.rounds ? (game.story && game.index + 2 === game.cfg.rounds ? "BOSS WORLD ▶" : "NEXT WORLD ▶") : "FINISH ▶";
   $("#reveal").classList.remove("hidden");
   $("#actions").classList.add("hidden");
   $("#true-ld-wrap").classList.remove("hidden");
+  $("#hint-btn").disabled = true;
   $("#hud-coins").textContent = pad(total("score"));
   $("#hud-bot").textContent = pad(total("stepScore"));
   render();
@@ -256,7 +275,7 @@ function showResults() {
   else $("#final-hi").textContent = `HI-SCORE ON ${game.cfg.level}: ${pad(prev)}`;
   snip($("#end-snip"), you >= bot ? "happy" : "sad");
   $("#results-body").innerHTML = game.history.map((r, i) =>
-    `<tr><td>1-${i + 1}</td><td>${names(r.causal)}</td><td>${names(r.picks) || "none"}</td><td class="num">${r.score}</td>` +
+    `<tr><td>${r.gene || `1-${i + 1}`}</td><td>${names(r.causal, r.rsids)}</td><td>${names(r.picks) || "none"}${r.hinted ? " (hint)" : ""}</td><td class="num">${r.score}</td>` +
     `<td>${names(r.stepwise) || "none"}</td><td class="num">${r.stepScore}</td></tr>`).join("");
   $("#tot-you").textContent = you; $("#tot-step").textContent = bot;
   sfx.end();
@@ -265,7 +284,8 @@ function showResults() {
 // ── Drawing ──────────────────────────────────────────────────────────────────
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const SVG = "http://www.w3.org/2000/svg";
-const W = 640, H = 380, M = { l: 52, r: 16, t: 34, b: 50 };
+const W = 640, M = { l: 52, r: 16, t: 34, b: 50 };
+let H = 380;
 
 function el(tag, attrs, parent) {
   const e = document.createElementNS(SVG, tag);
@@ -306,6 +326,8 @@ function render() {
 
 function drawScatter() {
   const svg = $("#scatter"), cur = game.cur, m = cur.m, LD = shownLD();
+  H = game.hints ? 414 : 380; M.b = game.hints ? 84 : 50;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.replaceChildren();
   const ymaxRaw = Math.max(6, ...cur.nlp) * 1.12;
   const ystep = niceStep(ymaxRaw, 5), ymax = Math.ceil(ymaxRaw / ystep) * ystep;
@@ -320,6 +342,16 @@ function drawScatter() {
   const xstep = Math.max(1, niceStep(m, 10));
   for (let j = 0; j < m; j++) if ((j + 1) % xstep === 0 || j === 0)
     el("text", { x: x(j), y: H - M.b + 22, "text-anchor": "middle" }, svg).textContent = j + 1;
+  // Annotation track: one badge per annotated variant
+  if (game.hints) {
+    const size = Math.min(16, Math.max(8, (W - M.l - M.r) / m - 2)), ty = H - M.b + 32;
+    el("text", { x: M.l - 8, y: ty + size - 3, "text-anchor": "end" }, svg).textContent = "annot.";
+    cur.annot.forEach((a, j) => {
+      if (!a) { el("rect", { x: x(j) - 1, y: ty + size / 2 - 1, width: 2, height: 2, fill: css("--screen-grid") }, svg); return; }
+      el("rect", { x: x(j) - size / 2, y: ty, width: size, height: size, fill: ANNOT[a.type].color }, svg);
+      if (size >= 12) el("text", { x: x(j), y: ty + size - 3, "text-anchor": "middle", class: "badge" }, svg).textContent = a.type;
+    });
+  }
   el("text", { x: (M.l + W - M.r) / 2, y: H - 6, "text-anchor": "middle", class: "axis-title" }, svg).textContent = "variant (position in the region)";
   el("text", { x: 16, y: (M.t + H - M.b) / 2, "text-anchor": "middle", class: "axis-title", transform: `rotate(-90 16 ${(M.t + H - M.b) / 2})` }, svg).textContent = "−log₁₀ p";
 
@@ -362,7 +394,8 @@ function markPoint(g, j, cx, cy) {
 function tipFor(j, e) {
   const cur = game.cur;
   let html = `<b>v${j + 1}</b> · −log₁₀ p ${cur.nlp[j].toFixed(1)}`;
-  if (game.revealed && cur.causal.includes(j)) html += "<br>★ causal";
+  if (game.hints) html += `<br>${cur.annot[j] ? cur.annot[j].label : "no annotation"}`;
+  if (game.revealed && cur.causal.includes(j)) html += `<br>★ causal${cur.rsids?.[j] ? ": " + cur.rsids[j] : ""}`;
   showTip(html, e);
 }
 function showTip(html, e) {
@@ -388,6 +421,8 @@ function updateLegend() {
   } else {
     parts.push(`<span><span class="sw" style="background:var(--flag)"></span>your flags</span>`, `<span>Hover over a variant to light up its LD.</span>`);
   }
+  if (game.hints) parts.push(`<span>Annotations:</span>` + Object.entries(ANNOT).map(([k, a]) =>
+    `<span><span class="sw" style="background:${a.color}"></span>${k} = ${a.name}</span>`).join(""));
   leg.innerHTML = parts.join("");
 }
 
@@ -474,15 +509,28 @@ function updateBlocks() {
     b.classList.toggle("wrong", game.revealed && picked && !causal);
     b.classList.toggle("missed", game.revealed && !picked && causal);
     b.disabled = game.revealed;
+    const a = cur.annot[j];
+    b.textContent = game.hints && a ? `${j + 1}${a.type}` : `${j + 1}`;
   });
 }
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
-$("#start").addEventListener("click", startGame);
+$("#start").addEventListener("click", () => startGame(false));
+$("#story").addEventListener("click", () => startGame(true));
+$("#hint-btn").addEventListener("click", () => {
+  if (game.revealed) return;
+  game.hints = !game.hints; sfx.pick(); updateHintBtn(); render();
+});
+function updateHintBtn() {
+  const b = $("#hint-btn");
+  b.setAttribute("aria-pressed", game.hints ? "true" : "false");
+  b.textContent = game.hints ? `HINTS ON (−${HINT_COST * 100}%)` : `HINTS OFF`;
+}
+updateHintBtn();
 $("#submit").addEventListener("click", submit);
 $("#clear").addEventListener("click", () => { game.picks.clear(); sfx.unpick(); render(); });
 $("#next").addEventListener("click", next);
-$("#again").addEventListener("click", startGame);
+$("#again").addEventListener("click", () => startGame(game.story));
 $("#change").addEventListener("click", () => { show("#title"); $("#seed-note").textContent = ""; showHigh(); });
 $("#true-ld").addEventListener("change", render);
 $("#mute").addEventListener("click", () => setMuted(!muted));
@@ -494,3 +542,5 @@ $("#share").addEventListener("click", async () => {
 });
 addEventListener("resize", () => { if (game.cur && !$("#game").classList.contains("hidden")) drawHeat(); });
 document.fonts?.ready.then(() => { if (game.cur) render(); });
+
+if (storyFromUrl && seed !== null) $("#seed-note").textContent = `Story mode, game code ${seed}: press STORY MODE to play the same worlds.`;

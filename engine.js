@@ -40,10 +40,13 @@ function simulate(cfg, rand) {
   // and fade over a random width), plus a chain along the region whose step-to-step correlation varies and
   // sometimes drops at a recombination hotspot. Every variant's loadings are jittered, so the matrix is
   // patchy and decays with distance rather than forming neat blocks.
-  const F = Math.max(2, Math.round(m / 5));
+  // Story worlds can add segments of their own (cfg.extra), e.g. a long haplotype swept up by selection
+  const extra = cfg.extra || [];
+  const base = Math.max(2, Math.round(m / 5)), F = base + extra.length;
   const Lf = Array.from({ length: m }, () => new Float64Array(F));
   for (let f = 0; f < F; f++) {
-    const centre = -3 + rand() * (m + 6), width = 2.5 + rand() * 7, amp = 0.4 + 0.6 * rand();
+    const x = extra[f - base];
+    const centre = x ? x.centre : -3 + rand() * (m + 6), width = x ? x.width : 2.5 + rand() * 7, amp = x ? x.amp : 0.4 + 0.6 * rand();
     for (let j = 0; j < m; j++) Lf[j][f] = amp * Math.exp(-0.5 * ((j - centre) / width) ** 2) * (0.75 + 0.25 * rand());
   }
   const rho = new Float64Array(m);
@@ -86,12 +89,20 @@ function simulate(cfg, rand) {
   }
 
   // Causal variants and phenotype
-  const k = cfg.kmin + Math.floor(rand() * (cfg.kmax - cfg.kmin + 1));
-  const order = Array.from({ length: m }, (_, j) => j);
-  for (let j = m - 1; j > 0; j--) { const r = Math.floor(rand() * (j + 1)); [order[j], order[r]] = [order[r], order[j]]; }
-  const causal = order.slice(0, k).sort((a, b) => a - b);
-  // Each causal variant explains 1–4% of phenotypic variance, so sample size sets how strong signals look
-  const beta = causal.map(() => Math.sqrt(0.01 + 0.03 * rand()) * (rand() < 0.5 ? -1 : 1));
+  // Story worlds fix the causal variants and their effects (signed variance explained)
+  let causal, beta;
+  if (cfg.causal) {
+    causal = cfg.causal.slice();
+    beta = cfg.effects.map((e) => Math.sign(e) * Math.sqrt(Math.abs(e)));
+  } else {
+    const k = cfg.kmin + Math.floor(rand() * (cfg.kmax - cfg.kmin + 1));
+    const order = Array.from({ length: m }, (_, j) => j);
+    for (let j = m - 1; j > 0; j--) { const r = Math.floor(rand() * (j + 1)); [order[j], order[r]] = [order[r], order[j]]; }
+    causal = order.slice(0, k).sort((a, b) => a - b);
+    // Each causal variant explains 1–4% of phenotypic variance, so sample size sets how strong signals look
+    beta = causal.map(() => Math.sqrt(0.01 + 0.03 * rand()) * (rand() < 0.5 ? -1 : 1));
+  }
+  const k = causal.length;
   const y = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     let v = normal();

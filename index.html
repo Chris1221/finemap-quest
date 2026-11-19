@@ -23,8 +23,15 @@
       <div class="bubble">Hi, I'm Snip! Each world hides a few causal variants. Their neighbours light up too, because of LD. Can you tell which ones really matter?</div>
     </div>
 
+    <div class="panel modes">
+      <div class="mode">
+        <button id="story" class="btn btn-gold big-btn">STORY MODE</button>
+        <p>Six worlds shaped like real fine-mapping stories, from TCF7L2 to a boss fight at the lactase locus. After each one, find out what scientists actually discovered.</p>
+      </div>
+    </div>
+
     <div class="panel options">
-      <h2>OPTIONS</h2>
+      <h2>FREE PLAY</h2>
       <div class="opt-grid">
         <div class="opt">
           <span class="opt-label">DIFFICULTY</span>
@@ -53,7 +60,7 @@
         </div>
       </div>
       <div class="start-row">
-        <button id="start" class="btn btn-gold big-btn">PRESS START</button>
+        <button id="start" class="btn btn-gold">FREE PLAY ▶</button>
         <span class="hi" id="hi-score"></span>
       </div>
       <p class="code" id="seed-note"></p>
@@ -66,6 +73,8 @@
         <li><b>The phenotype.</b> A few variants are causal, each explaining 1–4% of the phenotype's variance, with random signs. The rest do nothing.</li>
         <li><b>What you see.</b> The GWAS: −log<sub>10</sub> p from testing each variant on its own. And the LD (r²) between variants, estimated from the same N samples, so it carries sampling noise of about 1/√N.</li>
         <li><b>Your rival.</b> STEP-BOT runs a stepwise conditional analysis: take the strongest variant, refit conditioning on it, and repeat while the best remaining one passes p &lt; 0.05 / variants.</li>
+        <li><b>Hints.</b> Toggle on functional annotations (missense, promoter, enhancer) for every variant. Causal variants are more likely to carry one, as in real data, but most annotated variants are still bystanders. Using hints in a world costs 20% of its coins. Methods like PolyFun use annotations in the same way.</li>
+        <li><b>Story mode.</b> Six worlds shaped like real loci, with what fine-mapping and follow-up work actually found. The data are simulated to echo each story; the LD and effect sizes aren't the real ones.</li>
         <li><b>Scoring.</b> Each world is worth 100 coins: twice the number you got right, divided by your picks plus the true causal variants (the F1 score). A wrong pick and a missed causal variant cost the same.</li>
         <li><b>Class mode.</b> The settings and a game code go in the link, so everyone who opens it plays the same worlds.</li>
       </ul>
@@ -78,7 +87,7 @@
       <div class="hud-item"><span class="hud-k">WORLD</span><span class="hud-v" id="hud-world">1-1</span></div>
       <div class="hud-item"><span class="hud-k"><canvas class="coin" width="8" height="8"></canvas> COINS</span><span class="hud-v" id="hud-coins">0000</span></div>
       <div class="hud-item"><span class="hud-k">STEP-BOT</span><span class="hud-v" id="hud-bot">0000</span></div>
-      <div class="hud-item"><span class="hud-k">LEVEL</span><span class="hud-v" id="hud-level">MEDIUM</span></div>
+      <div class="hud-item"><span class="hud-k" id="hud-level-k">LEVEL</span><span class="hud-v" id="hud-level">MEDIUM</span></div>
       <button class="btn btn-small" id="mute" aria-pressed="false" title="Sound on or off">SOUND ON</button>
     </div>
 
@@ -89,7 +98,10 @@
 
     <div class="charts">
       <div class="panel screen-panel">
-        <p class="chart-title">GWAS <span>−log<sub>10</sub> p for each variant on its own</span></p>
+        <div class="chart-head">
+          <p class="chart-title">GWAS <span>−log<sub>10</sub> p for each variant on its own</span></p>
+          <button class="btn btn-small hint-btn" id="hint-btn" aria-pressed="false" title="Show what's known about each variant: missense, promoter or enhancer. Costs 20% of this world's coins.">HINTS OFF</button>
+        </div>
         <svg id="scatter" viewBox="0 0 640 380" role="img" aria-label="Association plot"></svg>
         <div class="legend" id="scatter-legend"></div>
       </div>
@@ -118,6 +130,8 @@
       </div>
       <p id="reveal-truth"></p>
       <p id="reveal-step"></p>
+      <div class="story-box hidden" id="reveal-story"><p class="story-head">THE REAL STORY</p><p id="story-text"></p>
+        <p class="story-note">This world was simulated to echo the real locus; its LD and effect sizes aren't the real ones.</p></div>
       <button id="next" class="btn btn-gold">NEXT WORLD ▶</button>
     </div>
   </section>
@@ -144,7 +158,7 @@
       </div>
       <div class="end-actions">
         <button id="again" class="btn btn-gold">PLAY AGAIN</button>
-        <button id="change" class="btn">OPTIONS</button>
+        <button id="change" class="btn">MENU</button>
         <button id="share" class="btn">COPY LINK</button>
       </div>
     </div>
@@ -165,6 +179,7 @@
 <div id="tip" class="hidden"></div>
 
 <script src="engine.js"></script>
+<script src="stories.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
