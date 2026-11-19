@@ -23,3 +23,9 @@ Everything runs in the browser; there's no build step. `engine.js` holds the sim
 ```bash
 python3 -m http.server 8000
 ```
+
+## Releasing
+
+GitHub Pages' CDN caches scripts and styles for hours, so `index.html` loads them with a version tag
+(`game.js?v=...`). Bump the tag in `index.html` whenever you change `engine.js`, `stories.js`, `game.js` or
+`style.css`, or players can get the new page with old code.
