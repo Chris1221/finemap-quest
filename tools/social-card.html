@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fine-map Quest: social card</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>body { margin: 0; background: #222; } canvas { display: block; margin: 8px; }</style>
+</head>
+<body>
+<!-- Draws og.png (the link preview) and icon.png (the favicon). Serve the repo root, open this page,
+     and save each canvas (right-click, Save image as) into the repo root. -->
+<canvas id="card" width="1200" height="630"></canvas>
+<canvas id="icon" width="64" height="64"></canvas>
+<script src="../engine.js"></script>
+<script>
+"use strict";
+const SNIP = ["..a..........a..", "..k..........k..", "...k........k...", "....kkkkkkkk....", "..kkggggggggkk..",
+  ".kglggggggggggk.", ".kgwwpggggwwpgk.", "kggwwpggggwwpggk", "kggggggggggggggk", "kggggmggggmggggk", "kgggggmmmmgggggk",
+  ".kggggggggggggk.", "..kkggggggggkk..", "....kkkkkkkk...."];
+const SNIP_C = { k: "#1d1a2f", g: "#36c9a6", l: "#a8f5e0", w: "#ffffff", p: "#1d1a2f", m: "#1d1a2f", a: "#ffc83d" };
+const BOT = ["....kkkk....", "....kaak....", ".....kk.....", ".kkkkkkkkkk.", ".kssssssssk.", ".ksrsssrssk.", ".kssssssssk.",
+  ".ksmmmmmmsk.", ".kssssssssk.", ".kkkkkkkkkk.", "..kk....kk..", "..kk....kk.."];
+const BOT_C = { k: "#1d1a2f", a: "#ff4f6d", s: "#a68cff", r: "#ff4f6d", m: "#e6e3ff" };
+const COIN = ["..kkkk..", ".kyyyyk.", "kyywyyyk", "kywyyyyk", "kyyyyyok", "kyyyyyok", ".kyoook.", "..kkkk.."];
+const COIN_C = { k: "#1d1a2f", y: "#ffc83d", w: "#fff6c8", o: "#c98a00" };
+const FLAG = ["k.....", "kffff.", "kfffff", "kffff.", "k.....", "k.....", "k.....", "kk...."];
+const FLAG_C = { k: "#1d1a2f", f: "#ff4f6d" };
+const CLOUD = ["....wwww......", "..wwwwwwww....", ".wwwwwwwwwww..", "wwwwwwwwwwwwww", ".ssssssssssss."];
+const CLOUD_C = { w: "#ffffff", s: "#d9f1ff" };
+
+function sprite(ctx, rows, colors, x, y, s) {
+  rows.forEach((row, j) => [...row].forEach((ch, i) => {
+    if (colors[ch]) { ctx.fillStyle = colors[ch]; ctx.fillRect(x + i * s, y + j * s, s, s); }
+  }));
+}
+function text(ctx, str, x, y, size, fill, shadow, font = "Press Start 2P", align = "left") {
+  ctx.font = `${size}px "${font}"`; ctx.textAlign = align; ctx.textBaseline = "top";
+  if (shadow) { ctx.fillStyle = shadow; ctx.fillText(str, x + size / 6, y + size / 6); }
+  ctx.fillStyle = fill; ctx.fillText(str, x, y);
+}
+// A panel with notched pixel corners and a thick dark edge, like the game's
+function panel(ctx, x, y, w, h, fill, e = 6) {
+  ctx.fillStyle = "#1d1a2f";
+  ctx.fillRect(x + e, y, w - 2 * e, h); ctx.fillRect(x, y + e, w, h - 2 * e);
+  ctx.fillStyle = fill;
+  ctx.fillRect(x + 2 * e, y + e, w - 4 * e, h - 2 * e); ctx.fillRect(x + e, y + 2 * e, w - 2 * e, h - 4 * e);
+}
+
+function card() {
+  const c = document.getElementById("card"), ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  // Sky in bands, as a pixel game would draw a gradient
+  const bands = ["#6ec3ff", "#7ecaff", "#8ed1ff", "#9ed8ff", "#aedfff", "#bee6ff", "#c4ecff"];
+  bands.forEach((col, i) => { ctx.fillStyle = col; ctx.fillRect(0, i * 80, 1200, 80); });
+  sprite(ctx, CLOUD, CLOUD_C, 70, 40, 8);
+  sprite(ctx, CLOUD, CLOUD_C, 520, 22, 6);
+  sprite(ctx, CLOUD, CLOUD_C, 980, 48, 7);
+
+  // Brick ground
+  const gy = 560;
+  ctx.fillStyle = "#3fae4a"; ctx.fillRect(0, gy - 10, 1200, 10);
+  ctx.fillStyle = "#2a7a33"; ctx.fillRect(0, gy - 2, 1200, 2);
+  ctx.fillStyle = "#a5684a"; ctx.fillRect(0, gy, 1200, 70);
+  for (let r = 0; r < 3; r++) for (let i = -1; i < 26; i++) {
+    const x = i * 50 + (r % 2 ? 25 : 0), y = gy + 2 + r * 24;
+    ctx.fillStyle = "#b5532a"; ctx.fillRect(x + 2, y, 46, 21);
+    ctx.fillStyle = "#6d2c10"; ctx.fillRect(x + 2, y + 18, 46, 3);
+  }
+
+  // Title
+  text(ctx, "FINE-MAP", 60, 120, 66, "#ffc83d", "#1d1a2f");
+  text(ctx, "QUEST", 60, 210, 66, "#ffc83d", "#1d1a2f");
+  // Tagline in a speech panel next to Snip
+  panel(ctx, 210, 330, 430, 130, "#fff6e0");
+  text(ctx, "Find the causal variants", 236, 350, 38, "#1d1a2f", null, "VT323");
+  text(ctx, "hiding in the LD!", 236, 392, 38, "#1d1a2f", null, "VT323");
+  ctx.fillStyle = "#1d1a2f"; ctx.fillRect(196, 400, 16, 12);
+  ctx.fillStyle = "#fff6e0"; ctx.fillRect(204, 402, 12, 8);
+  sprite(ctx, SNIP, SNIP_C, 60, 360, 9); // Snip, 144 x 126
+  sprite(ctx, COIN, COIN_C, 60, 500, 5);
+  text(ctx, "x 100", 108, 506, 22, "#1d1a2f");
+  text(ctx, "A FINE-MAPPING GAME", 290, 508, 18, "#1d1a2f");
+
+  // The GWAS screen: a real simulated world
+  const px = 680, py = 70, pw = 470, ph = 440;
+  panel(ctx, px, py, pw, ph, "#15132e", 8);
+  text(ctx, "GWAS", px + 30, py + 28, 20, "#e6e3ff");
+  text(ctx, "-log10 p", px + 120, py + 26, 26, "#a8a3d6", null, "VT323");
+  // A world where several linked variants share the top of the peak, which is the whole puzzle
+  const rand = mulberry32(11);
+  let cur;
+  for (let t = 0; t < 200; t++) {
+    cur = simulate({ variants: 30, samples: 2500, ld: 0.9, causal: [14], effects: [0.025], extra: [{ centre: 14, width: 4, amp: 2.5 }] }, rand);
+    const top = Math.max(...cur.nlp);
+    if (cur.nlp.filter((v) => v > 0.75 * top).length >= 4 && cur.nlp.indexOf(top) !== 14) break;
+  }
+  const ax = px + 40, ay = py + 80, aw = pw - 80, ah = ph - 180;
+  ctx.fillStyle = "#2c2858";
+  for (let k = 0; k <= 4; k++) ctx.fillRect(ax, ay + (ah * k) / 4, aw, 2);
+  const top = Math.max(...cur.nlp) * 1.3;
+  const X = (j) => ax + 10 + (j * (aw - 20)) / (cur.m - 1), Y = (v) => ay + ah - (v / top) * ah;
+  const lead = cur.nlp.indexOf(Math.max(...cur.nlp));
+  const ld = ["#5b5785", "#2b55c9", "#3c8cff", "#85ceff", "#e0f7ff"];
+  cur.nlp.forEach((v, j) => {
+    const r2 = cur.R[lead * cur.m + j] ** 2, col = ld[Math.min(4, Math.floor(r2 * 5))];
+    const x = Math.round(X(j)) - 7, y = Math.round(Y(v)) - 7;
+    ctx.fillStyle = "#0a0818"; ctx.fillRect(x - 2, y - 2, 18, 18);
+    ctx.fillStyle = col; ctx.fillRect(x, y, 14, 14);
+  });
+  // A flag on the tallest peak, and a question mark: is it really causal?
+  sprite(ctx, FLAG, FLAG_C, Math.round(X(lead)) - 3, Math.round(Y(cur.nlp[lead])) - 62, 6);
+  text(ctx, "?", Math.round(X(lead)) + 34, Math.round(Y(cur.nlp[lead])) - 60, 28, "#ffd84a");
+  // STEP-BOT, the rival, by the screen
+  text(ctx, "VS STEP-BOT", px + 30, py + ph - 48, 18, "#e6e3ff");
+  sprite(ctx, BOT, BOT_C, px + pw - 100, py + ph - 80, 5);
+}
+
+function icon() {
+  const c = document.getElementById("icon"), ctx = c.getContext("2d");
+  sprite(ctx, SNIP, SNIP_C, 0, 4, 4);
+}
+
+document.fonts.load('66px "Press Start 2P"').then(() => document.fonts.load('38px "VT323"')).then(() => { card(); icon(); });
+</script>
+</body>
+</html>

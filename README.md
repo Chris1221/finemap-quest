@@ -29,3 +29,9 @@ python3 -m http.server 8000
 GitHub Pages' CDN caches scripts and styles for hours, so `index.html` loads them with a version tag
 (`game.js?v=...`). Bump the tag in `index.html` whenever you change `engine.js`, `stories.js`, `game.js` or
 `style.css`, or players can get the new page with old code.
+
+## Link preview
+
+`og.png` (the card shown when the link is shared) and `icon.png` (the favicon) are drawn by
+`tools/social-card.html`. To change them, edit that page, serve the repo root, open the page and save each
+canvas into the repo root.
